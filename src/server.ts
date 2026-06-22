@@ -30,6 +30,7 @@ if (ADD_SECURITY_HEADERS) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
     next();
   });
 }
@@ -59,6 +60,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // ── JWT helper ─────────────────────────────────────────────────────────────────
+// jwt.alg_none     — default: JWT_ALG='none', no signature, freely forgeable.
+// jwt.weak_signature — when JWT_ALG is set to anything other than 'none' (e.g. HS256),
+//   the signature is a hardcoded stub (base64url of the literal string 'sig' → 'c2ln').
+//   Tokens are still trivially forgeable. This is intentional: it surfaces a secondary
+//   finding for operators who fix alg:none without providing a real signing key.
 
 function b64u(obj: object): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -196,7 +202,9 @@ app.get('/debug', (_req: Request, res: Response) => {
       JWT_ALG,
       JWT_TTL_SECONDS,
       JWT_MISSING_EXP,
-      AUTH_REQUIRED
+      AUTH_REQUIRED,
+      VULNERABLE_SQL,
+      VULNERABLE_TEMPLATE
     }
   });
 });
@@ -263,6 +271,11 @@ if (GRAPHQL_INTROSPECTION) {
 
 app.listen(PORT, () => {
   const mark = (active: boolean) => (active ? '[✓]' : '[ ]');
+  console.warn('');
+  console.warn('!!! WARNING: INTENTIONALLY VULNERABLE SERVER !!!');
+  console.warn('This server is a security scan target. ALL vulnerabilities');
+  console.warn('are ENABLED by default. Do not expose it to the internet.');
+  console.warn('');
   console.log(`\nVulnerable API  →  http://localhost:${PORT}\n`);
   console.log('Misconfigurations  ([✓] = active, will trigger a Sentinel finding)');
   console.log(
@@ -285,6 +298,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(JWT_ALG === 'none')} JWT alg:none                   JWT_ALG=HS256                    to fix`
+  );
+  console.log(
+    `  ${mark(JWT_ALG !== 'none')} JWT fake signature (stub sig)  JWT_ALG=none                     to revert`
   );
   console.log(
     `  ${mark(JWT_TTL_SECONDS > 86400)} JWT long TTL (${Math.round(JWT_TTL_SECONDS / 3600)}h)            JWT_TTL_SECONDS=3600             to shorten`
