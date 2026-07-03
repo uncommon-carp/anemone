@@ -77,20 +77,13 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `inventory.sensitive_endpoint_exposed` | `/swagger`, `/openapi.json`, `/graphql`, `/debug` | `EXPOSE_SWAGGER=false` (partial) |
 | `inventory.stale_version_responding` | `/api/v1/` | `LEGACY_API=false` |
 | `inventory.graphql_introspection_enabled` | `/graphql` | `GRAPHQL_INTROSPECTION=false` |
-| `jwt.alg_none` | `/api/v2/auth` | `JWT_ALG=HS256` |
-| `jwt.weak_signature` | `/api/v2/auth` | when `JWT_ALG != none`, signature is hardcoded stub `c2ln` — tokens remain forgeable; set `JWT_ALG=none` to revert to the primary finding |
-| `jwt.long_ttl` | `/api/v2/auth` | `JWT_TTL_SECONDS=3600` |
-| `jwt.missing_exp` | `/api/v2/auth` | `JWT_MISSING_EXP=true` to trigger |
-| `auth.unenforced` | `/api/v2/users` | `AUTH_REQUIRED=true` |
+| `auth.jwt_alg_none` | `/api/v2/auth` | `JWT_ALG=HS256` |
+| `auth.jwt_long_ttl` | `/api/v2/auth` | `JWT_TTL_SECONDS=3600` |
+| `auth.jwt_missing_exp` | `/api/v2/auth` | `JWT_MISSING_EXP=true` to trigger |
+| `auth.possible_bypass_probe` | `/api/v2/users` | `AUTH_REQUIRED=true` |
 | `auth.401_missing_www_authenticate` | `/api/v2/users` | `AUTH_REQUIRED=true` (triggers 401 without `WWW-Authenticate` header) |
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |
-
-### Note on `jwt.weak_signature`
-
-When `JWT_ALG` is set to anything other than `none` (e.g. `HS256`), the server produces a hardcoded base64url stub (`c2ln` = `"sig"`) instead of a real HMAC signature. Tokens are still trivially forgeable — this is an intentional secondary finding that surfaces when an operator "fixes" `alg:none` without providing a real signing key.
-
----
 
 ## Endpoints
 
