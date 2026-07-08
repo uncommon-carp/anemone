@@ -1,0 +1,59 @@
+{
+  "target": {
+    "baseUrl": "http://localhost:3000",
+    "openapi": "http://localhost:3000/openapi.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearerToken": "sentinel-demo-token",
+    "probePaths": [
+      "/api/v2/auth",
+      "/api/v2/users"
+    ],
+    "compareUnauthed": true
+  },
+  "suites": {
+    "headers": true,
+    "cors": true,
+    "auth": true,
+    "ratelimit": true,
+    "inventory": true,
+    "injection": true
+  },
+  "scope": {
+    "enabled": false,
+    "methods": [
+      "get",
+      "head"
+    ],
+    "maxEndpoints": 20,
+    "includePaths": [],
+    "excludePaths": [],
+    "prefer": [
+      "^/health",
+      "^/status",
+      "^/me",
+      "^/api/health"
+    ]
+  },
+  "injection": {
+    "categories": [
+      "sql",
+      "template"
+    ],
+    "paramTypes": [
+      "query",
+      "body"
+    ]
+  },
+  "active": {
+    "maxRequestsPerSuite": 40,
+    "timeoutMs": 8000
+  },
+  "output": {
+    "dir": "./sentinel-out",
+    "json": true,
+    "markdown": true
+  },
+  "verbose": false
+}
