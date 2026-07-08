@@ -67,6 +67,11 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 
 ## Vulnerability inventory
 
+IDs are defined in Sentinel's [`FINDINGS.md`](https://github.com/uncommon-carp/sentinel/blob/main/FINDINGS.md)
+— that file is the source of truth for severity/title/OWASP mapping. The
+table below is Anemone-specific: which endpoint exercises each finding and
+which env var controls it.
+
 | Sentinel finding ID | Endpoint | Controlled by |
 |---|---|---|
 | `headers.missing_hsts` | all | `ADD_SECURITY_HEADERS=false` |
