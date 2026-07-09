@@ -19,4 +19,5 @@ jobs:
     with:
       target-image-tag: ${{ github.sha }}
       target-env: ${{ github.event.inputs.target-env || '{}' }}
+      target-auth-url: http://localhost:3000/api/v2/auth
     secrets: inherit
