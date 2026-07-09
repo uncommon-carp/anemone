@@ -1,0 +1,18 @@
+name: scan
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target-env:
+        description: JSON object of Anemone env var overrides (misconfiguration profile), e.g. '{"AUTH_REQUIRED":"true"}'.
+        required: false
+        default: '{}'
+
+jobs:
+  scan:
+    uses: uncommon-carp/weir/.github/workflows/scan.yml@main
+    with:
+      target-image-tag: ${{ github.sha }}
+      target-env: ${{ github.event.inputs.target-env || '{}' }}
+    secrets: inherit
