@@ -85,6 +85,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `JWT_TTL_SECONDS` | `99999` | Token lifetime ~27.7 h (threshold: 24 h) | `3600` |
 | `JWT_MISSING_EXP` | `false` | Set `true` to issue tokens with no `exp` claim | — |
 | `AUTH_REQUIRED` | `false` | Protected endpoints accept unauthenticated requests | `true` |
+| `AUTH_PRESENCE_ONLY` | `false` | With `AUTH_REQUIRED=true`, accept any `Bearer` token without validating it | leave `false` |
 | `VULNERABLE_SQL` | `true` | SQL error strings reflected in 500 responses | `false` |
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 
@@ -95,6 +96,12 @@ prefix — the token is validated against what `/api/v2/auth` issues (matching
 `alg:none` tokens (default) carry no signature and are freely forgeable, and
 the non-`none` stub signature is a constant rather than a real HMAC, so forged
 payloads still pass (known gap — see the comment above `makeJwt()`).
+
+Setting `AUTH_PRESENCE_ONLY=true` (only meaningful with `AUTH_REQUIRED=true`)
+downgrades enforcement to a presence-only check: a missing token still gets
+401, but *any* `Bearer`-prefixed string is accepted without validation. This is
+the fixture for Sentinel's `auth.invalid_token_accepted` finding — it makes the
+endpoint reject the no-token probe while accepting the invalid-token probe.
 
 ---
 
@@ -119,6 +126,7 @@ which env var controls it.
 | `auth.jwt_long_ttl` | `/api/v2/auth` | `JWT_TTL_SECONDS=3600` |
 | `auth.jwt_missing_exp` | `/api/v2/auth` | `JWT_MISSING_EXP=true` to trigger |
 | `auth.possible_bypass_probe` | `/api/v2/users` | `AUTH_REQUIRED=true` |
+| `auth.invalid_token_accepted` | `/api/v2/users` | `AUTH_REQUIRED=true` + `AUTH_PRESENCE_ONLY=true` to trigger |
 | `auth.401_missing_www_authenticate` | `/api/v2/users` | `AUTH_REQUIRED=true` (triggers 401 without `WWW-Authenticate` header) |
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |

@@ -18,6 +18,7 @@ const JWT_ALG = process.env.JWT_ALG ?? 'none'; // default: alg:none
 const JWT_TTL_SECONDS = parseInt(process.env.JWT_TTL_SECONDS ?? '99999', 10); // default: ~27h
 const JWT_MISSING_EXP = process.env.JWT_MISSING_EXP === 'true'; // default: exp included
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === 'true'; // default: no enforcement
+const AUTH_PRESENCE_ONLY = process.env.AUTH_PRESENCE_ONLY === 'true'; // default: validate the token
 const VULNERABLE_SQL = process.env.VULNERABLE_SQL !== 'false'; // default: on
 const VULNERABLE_TEMPLATE = process.env.VULNERABLE_TEMPLATE !== 'false'; // default: on
 
@@ -119,6 +120,12 @@ function verifyJwt(token: string): boolean {
 // which is what makes Sentinel's valid-vs-invalid-vs-no-token enforcement probe
 // meaningful. 401s deliberately omit WWW-Authenticate
 // (triggers auth.401_missing_www_authenticate if Sentinel probes without credentials).
+//
+// AUTH_PRESENCE_ONLY=true downgrades this to a presence-only check: any
+// Bearer-prefixed string is accepted, validation is skipped. This is the
+// pre-validation behavior, kept behind a flag as the fixture for Sentinel's
+// auth.invalid_token_accepted finding — the endpoint rejects a missing token
+// (401) but accepts an invalid one (200).
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_REQUIRED) return next();
@@ -127,7 +134,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     res.status(401).json({ error: 'Unauthorized', reason: 'missing bearer token' });
     return;
   }
-  if (!verifyJwt(authorization.slice('Bearer '.length))) {
+  if (!AUTH_PRESENCE_ONLY && !verifyJwt(authorization.slice('Bearer '.length))) {
     res.status(401).json({ error: 'Unauthorized', reason: 'invalid or expired token' });
     return;
   }
@@ -245,6 +252,7 @@ app.get('/debug', (_req: Request, res: Response) => {
       JWT_TTL_SECONDS,
       JWT_MISSING_EXP,
       AUTH_REQUIRED,
+      AUTH_PRESENCE_ONLY,
       VULNERABLE_SQL,
       VULNERABLE_TEMPLATE
     }
@@ -352,6 +360,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(!AUTH_REQUIRED)} Auth enforcement disabled      AUTH_REQUIRED=true               to enforce`
+  );
+  console.log(
+    `  ${mark(AUTH_REQUIRED && AUTH_PRESENCE_ONLY)} Token presence-only (no verify) AUTH_PRESENCE_ONLY=true          to trigger`
   );
   console.log(
     `  ${mark(VULNERABLE_SQL)} SQL error reflection           VULNERABLE_SQL=false             to disable`
