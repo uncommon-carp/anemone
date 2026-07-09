@@ -88,6 +88,14 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_SQL` | `true` | SQL error strings reflected in 500 responses | `false` |
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 
+With `AUTH_REQUIRED=true`, protected endpoints don't just check for a `Bearer `
+prefix — the token is validated against what `/api/v2/auth` issues (matching
+`alg`, matching signature, unexpired `exp`), so garbage or expired tokens get
+401 while issued tokens pass. Two deliberate weaknesses survive validation:
+`alg:none` tokens (default) carry no signature and are freely forgeable, and
+the non-`none` stub signature is a constant rather than a real HMAC, so forged
+payloads still pass (known gap — see the comment above `makeJwt()`).
+
 ---
 
 ## Vulnerability inventory

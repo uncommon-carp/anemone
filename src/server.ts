@@ -70,23 +70,65 @@ function b64u(obj: object): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');
 }
 
+// Signature shared by issuance (makeJwt) and validation (verifyJwt): empty for
+// alg:none, the hardcoded stub otherwise.
+const JWT_SIG = JWT_ALG === 'none' ? '' : Buffer.from('sig').toString('base64url');
+
 function makeJwt(): string {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: JWT_ALG, typ: 'JWT' };
   const payload: { sub: string; iat: number; exp?: number } = { sub: 'demo', iat: now };
   if (!JWT_MISSING_EXP) payload.exp = now + JWT_TTL_SECONDS;
-  const sig = JWT_ALG === 'none' ? '' : Buffer.from('sig').toString('base64url');
-  return `${b64u(header)}.${b64u(payload)}.${sig}`;
+  return `${b64u(header)}.${b64u(payload)}.${JWT_SIG}`;
+}
+
+// Validates a token against what makeJwt() issues: well-formed three-part JWT,
+// alg matching the configured JWT_ALG, matching signature, and unexpired exp.
+// Deliberate weaknesses that survive validation:
+// - alg:none (default): the empty signature binds nothing, so any payload with
+//   an alg:none header passes — that IS the alg:none vulnerability.
+// - Stub signature (JWT_ALG != none): the signature is a constant, not an HMAC
+//   over the payload, so forged payloads still pass (known gap — Epic 5, 5.1).
+// - Missing exp is accepted, so the JWT_MISSING_EXP misconfiguration still works.
+function verifyJwt(token: string): boolean {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  let header: unknown;
+  let payload: unknown;
+  try {
+    header = JSON.parse(Buffer.from(parts[0]!, 'base64url').toString('utf8'));
+    payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
+  } catch {
+    return false;
+  }
+  if (typeof header !== 'object' || header === null) return false;
+  if (typeof payload !== 'object' || payload === null) return false;
+  if ((header as Record<string, unknown>).alg !== JWT_ALG) return false;
+  if (parts[2] !== JWT_SIG) return false;
+  const exp = (payload as Record<string, unknown>).exp;
+  if (exp !== undefined) {
+    if (typeof exp !== 'number') return false;
+    if (exp <= Math.floor(Date.now() / 1000)) return false;
+  }
+  return true;
 }
 
 // ── Auth middleware ────────────────────────────────────────────────────────────
-// When AUTH_REQUIRED=true, endpoints return 401 without WWW-Authenticate
+// When AUTH_REQUIRED=true, the bearer token is actually validated via verifyJwt()
+// — a garbage or expired token gets 401 while a token from /api/v2/auth passes,
+// which is what makes Sentinel's valid-vs-invalid-vs-no-token enforcement probe
+// meaningful. 401s deliberately omit WWW-Authenticate
 // (triggers auth.401_missing_www_authenticate if Sentinel probes without credentials).
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_REQUIRED) return next();
-  if (!req.headers['authorization']?.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Unauthorized' });
+  const authorization = req.headers['authorization'];
+  if (!authorization?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized', reason: 'missing bearer token' });
+    return;
+  }
+  if (!verifyJwt(authorization.slice('Bearer '.length))) {
+    res.status(401).json({ error: 'Unauthorized', reason: 'invalid or expired token' });
     return;
   }
   next();
