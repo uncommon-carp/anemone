@@ -43,6 +43,31 @@ npx sentinel scan --url http://localhost:3000 --config sentinel.example.json
 
 ---
 
+## CI: scanning via Weir
+
+`.github/workflows/scan.yml` calls [Weir](https://github.com/uncommon-carp/weir)'s
+reusable scan workflow. Every PR runs a scan against Anemone's default (fully
+vulnerable) state — that's the actual gate.
+
+For an on-demand scan against a specific misconfiguration profile instead of
+the default state, trigger it manually with `target-env`, a JSON object of env
+var overrides merged into the target container (see the table below for what
+each flag controls):
+
+```bash
+gh workflow run scan.yml --repo uncommon-carp/anemone \
+  -f target-env='{"CORS_STRICT":"true","EXPOSE_SWAGGER":"false","LEGACY_API":"false","GRAPHQL_INTROSPECTION":"false","JWT_ALG":"HS256","JWT_TTL_SECONDS":"3600","AUTH_REQUIRED":"true","VULNERABLE_SQL":"false","VULNERABLE_TEMPLATE":"false"}'
+```
+
+That example is a "headers only" profile — every flag except
+`ADD_SECURITY_HEADERS` is remediated, so only `headers.*` findings should
+appear (plus `inventory.sensitive_endpoint_exposed`, since `/debug` is always
+on regardless of `EXPOSE_SWAGGER`, and the two `ratelimit.*` findings, since
+Anemone has no rate-limit toggle at all — neither is fixable via env var,
+by design).
+
+---
+
 ## Environment variables
 
 All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" column to remediate that finding.
