@@ -63,9 +63,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // ── JWT helper ─────────────────────────────────────────────────────────────────
 // auth.jwt_alg_none — default: JWT_ALG='none', no signature, freely forgeable.
 // When JWT_ALG is set to anything other than 'none' (e.g. HS256), the signature is a
-//   hardcoded stub (base64url of the literal string 'sig' → 'c2ln') rather than a real
-//   HMAC signature. Tokens remain trivially forgeable even after "fixing" alg:none —
-//   intentional, but there's no dedicated Sentinel finding ID for this behavior yet.
+//   hardcoded stub (base64url of the literal string 'sig' → 'c2ln', 3 bytes) rather than
+//   a real HMAC signature. Tokens remain trivially forgeable even after "fixing"
+//   alg:none — this is what Sentinel's auth.jwt_weak_signature finding detects (a
+//   non-'none' signature far shorter than any real algorithm produces).
 
 function b64u(obj: object): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');

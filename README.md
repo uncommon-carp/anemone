@@ -81,7 +81,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `EXPOSE_SWAGGER` | `true` | `/swagger` and `/openapi.json` publicly reachable | `false` |
 | `LEGACY_API` | `true` | `/api/v1/` returns 200 after v2 is declared current | `false` |
 | `GRAPHQL_INTROSPECTION` | `true` | `__schema` queries answered at `/graphql` | `false` |
-| `JWT_ALG` | `none` | Tokens issued with `alg:none`, no signature | `HS256` |
+| `JWT_ALG` | `none` | Tokens issued with `alg:none`, no signature | `HS256`¹ |
 | `JWT_TTL_SECONDS` | `99999` | Token lifetime ~27.7 h (threshold: 24 h) | `3600` |
 | `JWT_MISSING_EXP` | `false` | Set `true` to issue tokens with no `exp` claim | — |
 | `AUTH_REQUIRED` | `false` | Protected endpoints accept unauthenticated requests | `true` |
@@ -89,13 +89,18 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_SQL` | `true` | SQL error strings reflected in 500 responses | `false` |
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 
+¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
+hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
+deliberately vulnerable fixture — no single flag yields a fully secure token.
+
 With `AUTH_REQUIRED=true`, protected endpoints don't just check for a `Bearer `
 prefix — the token is validated against what `/api/v2/auth` issues (matching
 `alg`, matching signature, unexpired `exp`), so garbage or expired tokens get
 401 while issued tokens pass. Two deliberate weaknesses survive validation:
 `alg:none` tokens (default) carry no signature and are freely forgeable, and
 the non-`none` stub signature is a constant rather than a real HMAC, so forged
-payloads still pass (known gap — see the comment above `makeJwt()`).
+payloads still pass (this is what Sentinel's `auth.jwt_weak_signature` finding
+detects — see the comment above `makeJwt()`).
 
 Setting `AUTH_PRESENCE_ONLY=true` (only meaningful with `AUTH_REQUIRED=true`)
 downgrades enforcement to a presence-only check: a missing token still gets
@@ -123,6 +128,7 @@ which env var controls it.
 | `inventory.stale_version_responding` | `/api/v1/` | `LEGACY_API=false` |
 | `inventory.graphql_introspection_enabled` | `/graphql` | `GRAPHQL_INTROSPECTION=false` |
 | `auth.jwt_alg_none` | `/api/v2/auth` | `JWT_ALG=HS256` |
+| `auth.jwt_weak_signature` | `/api/v2/auth` | `JWT_ALG=HS256` (any non-`none` alg → stub signature) |
 | `auth.jwt_long_ttl` | `/api/v2/auth` | `JWT_TTL_SECONDS=3600` |
 | `auth.jwt_missing_exp` | `/api/v2/auth` | `JWT_MISSING_EXP=true` to trigger |
 | `auth.possible_bypass_probe` | `/api/v2/users` | `AUTH_REQUIRED=true` |
