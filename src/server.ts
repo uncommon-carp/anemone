@@ -249,6 +249,19 @@ app.get('/api/v2/fetch', (req: Request, res: Response) => {
   res.json({ requestedUrl: url, status: 'ok' });
 });
 
+// POST /api/v2/webhooks registers a webhook by URL in the JSON body — the classic
+// body-parameter SSRF vector. Same VULNERABLE_SSRF semantics as /fetch: default
+// accepts any URL (no real fetch), VULNERABLE_SSRF=false validates. This is the
+// fixture for Sentinel's opt-in active probe (inventory.ssrfActiveProbe), which
+// probes POST/PUT/PATCH body params — a plain GET scan never touches it.
+app.post('/api/v2/webhooks', (req: Request, res: Response) => {
+  const url = String(req.body?.url ?? '');
+  if (!VULNERABLE_SSRF && isExternalUrl(url)) {
+    return res.status(400).json({ error: 'url not allowed' });
+  }
+  res.status(200).json({ registeredUrl: url, status: 'ok' });
+});
+
 // ── Legacy endpoint ────────────────────────────────────────────────────────────
 // Triggers inventory.stale_version_responding when the OpenAPI spec declares v2
 // and this endpoint (version < 2) still responds 200.
@@ -323,6 +336,22 @@ if (EXPOSE_SWAGGER) {
             parameters: [
               { name: 'url', in: 'query', schema: { type: 'string', format: 'uri' } }
             ],
+            responses: { 200: { description: 'OK' } }
+          }
+        },
+        '/webhooks': {
+          post: {
+            summary: 'Register a webhook',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { url: { type: 'string', format: 'uri' } }
+                  }
+                }
+              }
+            },
             responses: { 200: { description: 'OK' } }
           }
         }
