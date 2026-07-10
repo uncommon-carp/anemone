@@ -21,6 +21,7 @@ const AUTH_REQUIRED = process.env.AUTH_REQUIRED === 'true'; // default: no enfor
 const AUTH_PRESENCE_ONLY = process.env.AUTH_PRESENCE_ONLY === 'true'; // default: validate the token
 const VULNERABLE_SQL = process.env.VULNERABLE_SQL !== 'false'; // default: on
 const VULNERABLE_TEMPLATE = process.env.VULNERABLE_TEMPLATE !== 'false'; // default: on
+const VULNERABLE_SSRF = process.env.VULNERABLE_SSRF !== 'false'; // default: on
 
 // ── Security headers ───────────────────────────────────────────────────────────
 // Disabled by default — triggers headers.missing_hsts, missing_xcto, missing_referrer_policy.
@@ -222,6 +223,32 @@ if (VULNERABLE_TEMPLATE) {
   });
 }
 
+// ── SSRF surface ───────────────────────────────────────────────────────────────
+// GET /api/v2/fetch?url= accepts a user-supplied URL. Default (VULNERABLE_SSRF=true):
+// reflects the URL with 200 and no validation — the surface Sentinel's
+// inventory.ssrf_surface finding detects. It does NOT actually fetch the URL (safe,
+// deterministic — like the SQL/template fixtures, it simulates the response pattern).
+// VULNERABLE_SSRF=false: rejects any absolute http(s) URL to a non-loopback host with
+// 400, the validation signal that clears the finding.
+
+function isExternalUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    return u.hostname !== 'localhost' && u.hostname !== '127.0.0.1' && u.hostname !== '::1';
+  } catch {
+    return false;
+  }
+}
+
+app.get('/api/v2/fetch', (req: Request, res: Response) => {
+  const url = String(req.query.url ?? '');
+  if (!VULNERABLE_SSRF && isExternalUrl(url)) {
+    return res.status(400).json({ error: 'url not allowed' });
+  }
+  res.json({ requestedUrl: url, status: 'ok' });
+});
+
 // ── Legacy endpoint ────────────────────────────────────────────────────────────
 // Triggers inventory.stale_version_responding when the OpenAPI spec declares v2
 // and this endpoint (version < 2) still responds 200.
@@ -255,7 +282,8 @@ app.get('/debug', (_req: Request, res: Response) => {
       AUTH_REQUIRED,
       AUTH_PRESENCE_ONLY,
       VULNERABLE_SQL,
-      VULNERABLE_TEMPLATE
+      VULNERABLE_TEMPLATE,
+      VULNERABLE_SSRF
     }
   });
 });
@@ -286,6 +314,15 @@ if (EXPOSE_SWAGGER) {
           get: {
             summary: 'Greet user',
             parameters: [{ name: 'name', in: 'query', schema: { type: 'string' } }],
+            responses: { 200: { description: 'OK' } }
+          }
+        },
+        '/fetch': {
+          get: {
+            summary: 'Fetch a URL',
+            parameters: [
+              { name: 'url', in: 'query', schema: { type: 'string', format: 'uri' } }
+            ],
             responses: { 200: { description: 'OK' } }
           }
         }
@@ -370,6 +407,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(VULNERABLE_TEMPLATE)} Template expression eval       VULNERABLE_TEMPLATE=false        to disable`
+  );
+  console.log(
+    `  ${mark(VULNERABLE_SSRF)} SSRF: unvalidated URL fetch    VULNERABLE_SSRF=false            to validate`
   );
   console.log('');
   console.log(`Run against this target:`);
