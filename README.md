@@ -109,12 +109,6 @@ downgrades enforcement to a presence-only check: a missing token still gets
 the fixture for Sentinel's `auth.invalid_token_accepted` finding — it makes the
 endpoint reject the no-token probe while accepting the invalid-token probe.
 
-Setting `AUTH_PRESENCE_ONLY=true` (only meaningful with `AUTH_REQUIRED=true`)
-downgrades enforcement to a presence-only check: a missing token still gets
-401, but *any* `Bearer`-prefixed string is accepted without validation. This is
-the fixture for Sentinel's `auth.invalid_token_accepted` finding — it makes the
-endpoint reject the no-token probe while accepting the invalid-token probe.
-
 ---
 
 ## Vulnerability inventory
