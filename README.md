@@ -89,6 +89,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_SQL` | `true` | SQL error strings reflected in 500 responses | `false` |
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 | `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
+| `VULNERABLE_BOLA` | `true` | `GET /api/v2/users/:id` returns any user's record regardless of the caller's identity | `false` |
 
 ¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
 hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
@@ -108,6 +109,23 @@ downgrades enforcement to a presence-only check: a missing token still gets
 401, but *any* `Bearer`-prefixed string is accepted without validation. This is
 the fixture for Sentinel's `auth.invalid_token_accepted` finding — it makes the
 endpoint reject the no-token probe while accepting the invalid-token probe.
+
+### BOLA fixture (`VULNERABLE_BOLA`)
+
+`GET /api/v2/users/:id` is a Broken Object Level Authorization (OWASP API1)
+fixture. Two records exist — `1` owned by `alice`, `2` owned by `bob` — each
+holding sensitive fields (`email`, `apiKey`). By default the endpoint returns
+whichever record is requested **regardless of the caller's identity**, so a
+token for `bob` can read Alice's record. Set `VULNERABLE_BOLA=false` to enforce
+ownership (the caller's JWT `sub` must own the record, else `403`).
+
+Authenticate as a specific identity with `GET /api/v2/auth?user=alice` or
+`?user=bob` (default `demo`). The meaningful config is
+`AUTH_REQUIRED=true VULNERABLE_BOLA=true` — tokens are validated so the identity
+is real, but object ownership is not checked. The Sentinel check that probes
+this (a cross-identity BOLA probe) is Epic 5 story 5.5, so there is no
+`FINDINGS.md` ID for it yet; this endpoint is the target fixture that lands
+first.
 
 ---
 
@@ -146,7 +164,8 @@ which env var controls it.
 | `GET` | `/` | No | `{name, version}` |
 | `GET` | `/api/v2/health` | No | `{status: "ok"}` |
 | `GET` | `/api/v2/users` | `requireAuth` | Returns Alice/Bob |
-| `GET` | `/api/v2/auth` | No | Issues a JWT |
+| `GET` | `/api/v2/users/:id` | `requireAuth` | BOLA — returns any user's full record (email, apiKey) regardless of caller |
+| `GET` | `/api/v2/auth` | No | Issues a JWT; `?user=alice\|bob` issues that identity (default `demo`) |
 | `GET` | `/api/v2/search?q=` | No | SQL error reflection probe |
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
 | `GET` | `/api/v2/fetch?url=` | No | SSRF surface — accepts a URL query param (reflects it; no real fetch) |
