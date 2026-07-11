@@ -22,6 +22,7 @@ const AUTH_PRESENCE_ONLY = process.env.AUTH_PRESENCE_ONLY === 'true'; // default
 const VULNERABLE_SQL = process.env.VULNERABLE_SQL !== 'false'; // default: on
 const VULNERABLE_TEMPLATE = process.env.VULNERABLE_TEMPLATE !== 'false'; // default: on
 const VULNERABLE_SSRF = process.env.VULNERABLE_SSRF !== 'false'; // default: on
+const VULNERABLE_BOLA = process.env.VULNERABLE_BOLA !== 'false'; // default: on
 
 // ── Security headers ───────────────────────────────────────────────────────────
 // Disabled by default — triggers headers.missing_hsts, missing_xcto, missing_referrer_policy.
@@ -77,13 +78,40 @@ function b64u(obj: object): string {
 // alg:none, the hardcoded stub otherwise.
 const JWT_SIG = JWT_ALG === 'none' ? '' : Buffer.from('sig').toString('base64url');
 
-function makeJwt(): string {
+function makeJwt(sub: string = 'demo'): string {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: JWT_ALG, typ: 'JWT' };
-  const payload: { sub: string; iat: number; exp?: number } = { sub: 'demo', iat: now };
+  const payload: { sub: string; iat: number; exp?: number } = { sub, iat: now };
   if (!JWT_MISSING_EXP) payload.exp = now + JWT_TTL_SECONDS;
   return `${b64u(header)}.${b64u(payload)}.${JWT_SIG}`;
 }
+
+// Decodes the `sub` (subject/identity) claim from a JWT payload without
+// verifying it — used to identify the caller for the BOLA ownership check.
+function jwtSub(token: string): string | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as {
+      sub?: unknown;
+    };
+    return typeof payload.sub === 'string' ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── User store (BOLA fixture) ──────────────────────────────────────────────────
+// Each record is owned by an identity (the JWT `sub`). GET /api/v2/users/:id
+// leaks any record regardless of the caller — see the route below.
+const USERS: Record<
+  number,
+  { id: number; name: string; owner: string; email: string; apiKey: string }
+> = {
+  1: { id: 1, name: 'Alice', owner: 'alice', email: 'alice@example.com', apiKey: 'sk_live_alice_9f2b1e' },
+  2: { id: 2, name: 'Bob', owner: 'bob', email: 'bob@example.com', apiKey: 'sk_live_bob_4c7d83' }
+};
+const KNOWN_USERS = new Set(['alice', 'bob', 'demo']);
 
 // Validates a token against what makeJwt() issues: well-formed three-part JWT,
 // alg matching the configured JWT_ALG, matching signature, and unexpired exp.
@@ -189,10 +217,40 @@ app.get('/api/v2/users', requireAuth, (_req: Request, res: Response) => {
   });
 });
 
+// ── BOLA: object-level authorization ───────────────────────────────────────────
+// GET /api/v2/users/:id returns a user record by id. Default (VULNERABLE_BOLA=true):
+// returns any record regardless of the caller's identity — the classic BOLA/IDOR
+// leak (Bob's token reads Alice's record). VULNERABLE_BOLA=false enforces
+// ownership: the caller's JWT `sub` must own the record, else 403.
+// requireAuth gates it (respects AUTH_REQUIRED, like the list route), so the
+// meaningful BOLA config is AUTH_REQUIRED=true + VULNERABLE_BOLA=true.
+// This is the target fixture for Sentinel's BOLA probe (Epic 5 story 5.5).
+app.get('/api/v2/users/:id', requireAuth, (req: Request, res: Response) => {
+  const record = USERS[Number(req.params.id)];
+  if (!record) {
+    res.status(404).json({ error: 'user not found' });
+    return;
+  }
+  const authorization = req.headers['authorization'];
+  const callerSub = authorization?.startsWith('Bearer ')
+    ? jwtSub(authorization.slice('Bearer '.length))
+    : null;
+  if (!VULNERABLE_BOLA && record.owner !== callerSub) {
+    res.status(403).json({ error: 'forbidden', reason: 'not your resource' });
+    return;
+  }
+  res.json(record);
+});
+
 // Auth probe endpoint — returns a JWT in the body.
 // The auth suite inspects this response, triggering JWT findings based on config.
-app.get('/api/v2/auth', (_req: Request, res: Response) => {
-  res.json({ token: makeJwt(), user: 'demo' });
+// ?user=alice|bob issues a token for that identity (default: demo) so a caller —
+// and Sentinel's future multi-identity config (story 5.4) — can hold two distinct
+// identities to exercise the BOLA endpoint above.
+app.get('/api/v2/auth', (req: Request, res: Response) => {
+  const requested = req.query.user;
+  const user = typeof requested === 'string' && KNOWN_USERS.has(requested) ? requested : 'demo';
+  res.json({ token: makeJwt(user), user });
 });
 
 // ── Injection: SQL error reflection ───────────────────────────────────────────
@@ -296,7 +354,8 @@ app.get('/debug', (_req: Request, res: Response) => {
       AUTH_PRESENCE_ONLY,
       VULNERABLE_SQL,
       VULNERABLE_TEMPLATE,
-      VULNERABLE_SSRF
+      VULNERABLE_SSRF,
+      VULNERABLE_BOLA
     }
   });
 });
@@ -315,7 +374,20 @@ if (EXPOSE_SWAGGER) {
       paths: {
         '/health': { get: { summary: 'Health check', responses: { 200: { description: 'OK' } } } },
         '/users': { get: { summary: 'List users', responses: { 200: { description: 'OK' } } } },
-        '/auth': { get: { summary: 'Get auth token', responses: { 200: { description: 'OK' } } } },
+        '/users/{id}': {
+          get: {
+            summary: 'Get a user by id',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+            responses: { 200: { description: 'OK' }, 404: { description: 'Not found' } }
+          }
+        },
+        '/auth': {
+          get: {
+            summary: 'Get auth token',
+            parameters: [{ name: 'user', in: 'query', schema: { type: 'string' } }],
+            responses: { 200: { description: 'OK' } }
+          }
+        },
         '/search': {
           get: {
             summary: 'Search',
@@ -439,6 +511,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(VULNERABLE_SSRF)} SSRF: unvalidated URL fetch    VULNERABLE_SSRF=false            to validate`
+  );
+  console.log(
+    `  ${mark(VULNERABLE_BOLA)} BOLA: object-level auth off    VULNERABLE_BOLA=false            to enforce`
   );
   console.log('');
   console.log(`Run against this target:`);
