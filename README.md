@@ -88,7 +88,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `AUTH_PRESENCE_ONLY` | `false` | With `AUTH_REQUIRED=true`, accept any `Bearer` token without validating it | leave `false` |
 | `VULNERABLE_SQL` | `true` | SQL error strings reflected in 500 responses | `false` |
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
-| `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` accepts any URL without validation | `false` |
+| `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
 
 ¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
 hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
@@ -137,7 +137,7 @@ which env var controls it.
 | `auth.401_missing_www_authenticate` | `/api/v2/users` | `AUTH_REQUIRED=true` (triggers 401 without `WWW-Authenticate` header) |
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |
-| `inventory.ssrf_surface` | `/api/v2/fetch?url=` | `VULNERABLE_SSRF=false` |
+| `inventory.ssrf_surface` | `/api/v2/fetch?url=` (GET query, always probed); `POST /api/v2/webhooks` (JSON body, only when Sentinel runs with `inventory.ssrfActiveProbe`) | `VULNERABLE_SSRF=false` |
 
 ## Endpoints
 
@@ -149,7 +149,8 @@ which env var controls it.
 | `GET` | `/api/v2/auth` | No | Issues a JWT |
 | `GET` | `/api/v2/search?q=` | No | SQL error reflection probe |
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
-| `GET` | `/api/v2/fetch?url=` | No | SSRF surface — accepts a URL (reflects it; no real fetch) |
+| `GET` | `/api/v2/fetch?url=` | No | SSRF surface — accepts a URL query param (reflects it; no real fetch) |
+| `POST` | `/api/v2/webhooks` | No | SSRF surface — accepts a URL in the JSON body (reflects it; no real fetch) |
 | `GET` | `/api/v1/` | No | Legacy (conditional) |
 | `GET` | `/api/v1/users` | No | Legacy (conditional) |
 | `GET` | `/debug` | No | Full live config — always on |
