@@ -90,6 +90,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 | `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
 | `VULNERABLE_BOLA` | `true` | `GET /api/v2/users/:id` returns any user's record regardless of the caller's identity | `false` |
+| `VULNERABLE_MASS_ASSIGNMENT` | `true` | `PATCH /api/v2/users/:id` merges undocumented body fields (`role`, `isAdmin`, `owner`, ...) into the record | `false` |
 
 ¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
 hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
@@ -127,6 +128,24 @@ this (a cross-identity BOLA probe) is Epic 5 story 5.5, so there is no
 `FINDINGS.md` ID for it yet; this endpoint is the target fixture that lands
 first.
 
+### Mass assignment fixture (`VULNERABLE_MASS_ASSIGNMENT`)
+
+`PATCH /api/v2/users/:id` updates the caller's own record — ownership is
+enforced unconditionally here (unlike the GET route above, which toggles it
+via `VULNERABLE_BOLA`), so this exercises mass assignment specifically, not
+BOLA. The OpenAPI request-body schema for this route only ever advertises
+`email` as settable. By default (`VULNERABLE_MASS_ASSIGNMENT=true`) any other
+field in the request body — `role`, `isAdmin`, `owner`, or anything else — is
+merged into the stored record and persists: the server accepts more than the
+spec promises. Set `VULNERABLE_MASS_ASSIGNMENT=false` to strip undocumented
+fields before the merge, so only `email` can change.
+
+`requireAuth` gates this route (respects `AUTH_REQUIRED`), so the meaningful
+config is `AUTH_REQUIRED=true` with a token for the record's own identity
+(`GET /api/v2/auth?user=alice`, then `PATCH /users/1`) — same authentication
+pattern as the BOLA fixture. The Sentinel check that probes this
+(`auth.mass_assignment_accepted`) is Epic 5 story 5.9.
+
 ---
 
 ## Vulnerability inventory
@@ -156,6 +175,10 @@ which env var controls it.
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |
 | `inventory.ssrf_surface` | `/api/v2/fetch?url=` (GET query, always probed); `POST /api/v2/webhooks` (JSON body, only when Sentinel runs with `inventory.ssrfActiveProbe`) | `VULNERABLE_SSRF=false` |
+| `auth.mass_assignment_accepted`² | `PATCH /api/v2/users/:id` | `AUTH_REQUIRED=true` + `VULNERABLE_MASS_ASSIGNMENT=true` to trigger, only when Sentinel runs with `auth.massAssignmentProbe` |
+
+² Epic 5 story 5.9 (not yet implemented at the time this fixture landed) — no
+`FINDINGS.md` entry until that check exists.
 
 ## Endpoints
 
@@ -165,6 +188,7 @@ which env var controls it.
 | `GET` | `/api/v2/health` | No | `{status: "ok"}` |
 | `GET` | `/api/v2/users` | `requireAuth` | Returns Alice/Bob |
 | `GET` | `/api/v2/users/:id` | `requireAuth` | BOLA — returns any user's full record (email, apiKey) regardless of caller |
+| `PATCH` | `/api/v2/users/:id` | `requireAuth` + ownership | Mass assignment — merges undocumented body fields (role, isAdmin, owner, ...) into the record |
 | `GET` | `/api/v2/auth` | No | Issues a JWT; `?user=alice\|bob` issues that identity (default `demo`) |
 | `GET` | `/api/v2/search?q=` | No | SQL error reflection probe |
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
