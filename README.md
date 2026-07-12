@@ -90,6 +90,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 | `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
 | `VULNERABLE_BOLA` | `true` | `GET /api/v2/users/:id` returns any user's record regardless of the caller's identity | `false` |
+| `VULNERABLE_DATA_EXPOSURE` | `true` | `GET /api/v2/users/:id` includes `apiKey` in the response | `false` |
 
 ¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
 hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
@@ -123,9 +124,20 @@ Authenticate as a specific identity with `GET /api/v2/auth?user=alice` or
 `?user=bob` (default `demo`). The meaningful config is
 `AUTH_REQUIRED=true VULNERABLE_BOLA=true` — tokens are validated so the identity
 is real, but object ownership is not checked. The Sentinel check that probes
-this (a cross-identity BOLA probe) is Epic 5 story 5.5, so there is no
-`FINDINGS.md` ID for it yet; this endpoint is the target fixture that lands
-first.
+this (a cross-identity BOLA probe) is `auth.bola_object_access` (Epic 5 story
+5.5).
+
+### Excessive data exposure fixture (`VULNERABLE_DATA_EXPOSURE`)
+
+Same `GET /api/v2/users/:id` endpoint, a separate concern from BOLA above:
+once a caller passes the ownership gate (or `VULNERABLE_BOLA` leaks the record
+regardless), the response still includes `apiKey` — a credential that should
+never be re-served on a read, even to its own owner. Default
+(`VULNERABLE_DATA_EXPOSURE=true`): `apiKey` included. `=false`: `apiKey`
+stripped from the response entirely. `email` stays present in both modes —
+it's expected profile data, not the excessive-exposure case. This is the
+target fixture for Sentinel's `inventory.excessive_data_exposure` check (Epic
+5 story 5.7).
 
 ---
 
@@ -156,6 +168,8 @@ which env var controls it.
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |
 | `inventory.ssrf_surface` | `/api/v2/fetch?url=` (GET query, always probed); `POST /api/v2/webhooks` (JSON body, only when Sentinel runs with `inventory.ssrfActiveProbe`) | `VULNERABLE_SSRF=false` |
+| `auth.bola_object_access` | `/api/v2/users/:id` | `AUTH_REQUIRED=true` + `VULNERABLE_BOLA=true` + two identities configured |
+| `inventory.excessive_data_exposure` | `/api/v2/users/:id` | `VULNERABLE_DATA_EXPOSURE=false` |
 
 ## Endpoints
 
@@ -164,7 +178,7 @@ which env var controls it.
 | `GET` | `/` | No | `{name, version}` |
 | `GET` | `/api/v2/health` | No | `{status: "ok"}` |
 | `GET` | `/api/v2/users` | `requireAuth` | Returns Alice/Bob |
-| `GET` | `/api/v2/users/:id` | `requireAuth` | BOLA — returns any user's full record (email, apiKey) regardless of caller |
+| `GET` | `/api/v2/users/:id` | `requireAuth` | BOLA — returns any user's full record (email, apiKey) regardless of caller; `apiKey` strippable via `VULNERABLE_DATA_EXPOSURE=false` |
 | `GET` | `/api/v2/auth` | No | Issues a JWT; `?user=alice\|bob` issues that identity (default `demo`) |
 | `GET` | `/api/v2/search?q=` | No | SQL error reflection probe |
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
