@@ -4,8 +4,13 @@
     "openapi": "http://localhost:3000/openapi.json"
   },
   "auth": {
-    "type": "bearer",
-    "bearerToken": "sentinel-demo-token",
+    "identities": [
+      {
+        "name": "primary",
+        "type": "bearer",
+        "bearerToken": "sentinel-demo-token"
+      }
+    ],
     "probePaths": [
       "/api/v2/auth",
       "/api/v2/users"
