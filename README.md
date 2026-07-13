@@ -1,5 +1,7 @@
 # anemone
 
+[![scan](https://github.com/uncommon-carp/anemone/actions/workflows/scan.yml/badge.svg)](https://github.com/uncommon-carp/anemone/actions/workflows/scan.yml)
+
 **Intentionally vulnerable API** — a scan target for [Sentinel](https://github.com/uncommon-carp/sentinel) security tooling.
 
 > **WARNING:** Every misconfiguration is **on by default**. Do not expose this server to the internet or run it in any production environment.
