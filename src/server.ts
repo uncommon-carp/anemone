@@ -23,6 +23,7 @@ const VULNERABLE_SQL = process.env.VULNERABLE_SQL !== 'false'; // default: on
 const VULNERABLE_TEMPLATE = process.env.VULNERABLE_TEMPLATE !== 'false'; // default: on
 const VULNERABLE_SSRF = process.env.VULNERABLE_SSRF !== 'false'; // default: on
 const VULNERABLE_BOLA = process.env.VULNERABLE_BOLA !== 'false'; // default: on
+const VULNERABLE_BUSINESS_FLOW = process.env.VULNERABLE_BUSINESS_FLOW !== 'false'; // default: on
 const VULNERABLE_MASS_ASSIGNMENT = process.env.VULNERABLE_MASS_ASSIGNMENT !== 'false'; // default: on
 const VULNERABLE_DATA_EXPOSURE = process.env.VULNERABLE_DATA_EXPOSURE !== 'false'; // default: on
 
@@ -380,6 +381,31 @@ app.post('/api/v2/webhooks', (req: Request, res: Response) => {
   res.status(200).json({ registeredUrl: url, status: 'ok' });
 });
 
+// ── Sensitive business flow: coupon redemption ─────────────────────────────────
+// POST /api/v2/coupons/redeem simulates a sensitive business flow — the fixture
+// for Sentinel's opt-in businessFlow.sensitivePaths config and the ratelimit
+// suite's third phase (Epic 5 story 5.11). Unlike the rest of Anemone, which
+// has no rate-limit toggle at all by design (general HTTP-layer rate limiting
+// isn't meant to be fixable per-endpoint here), this route implements a real
+// minimal throttle so the "fixed" state is actually demonstrable: default
+// (VULNERABLE_BUSINESS_FLOW=true) never throttles; =false rejects with 429 +
+// Retry-After after COUPON_REDEEM_LIMIT requests.
+const COUPON_REDEEM_LIMIT = 3;
+let couponRedeemCount = 0;
+
+app.post('/api/v2/coupons/redeem', (req: Request, res: Response) => {
+  if (!VULNERABLE_BUSINESS_FLOW) {
+    couponRedeemCount++;
+    if (couponRedeemCount > COUPON_REDEEM_LIMIT) {
+      res.setHeader('Retry-After', '30');
+      res.status(429).json({ error: 'too many requests' });
+      return;
+    }
+  }
+  const code = String(req.body?.code ?? '');
+  res.json({ code, status: code ? 'redeemed' : 'invalid' });
+});
+
 // ── Legacy endpoint ────────────────────────────────────────────────────────────
 // Triggers inventory.stale_version_responding when the OpenAPI spec declares v2
 // and this endpoint (version < 2) still responds 200.
@@ -416,6 +442,7 @@ app.get('/debug', (_req: Request, res: Response) => {
       VULNERABLE_TEMPLATE,
       VULNERABLE_SSRF,
       VULNERABLE_BOLA,
+      VULNERABLE_BUSINESS_FLOW,
       VULNERABLE_MASS_ASSIGNMENT,
       VULNERABLE_DATA_EXPOSURE
     }
@@ -523,6 +550,20 @@ if (EXPOSE_SWAGGER) {
             },
             responses: { 200: { description: 'OK' } }
           }
+        },
+        '/coupons/redeem': {
+          post: {
+            summary: 'Redeem a coupon code',
+            operationId: 'redeemCoupon',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: { type: 'object', properties: { code: { type: 'string' } } }
+                }
+              }
+            },
+            responses: { 200: { description: 'OK' }, 429: { description: 'Too many requests' } }
+          }
         }
       }
     });
@@ -611,6 +652,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(VULNERABLE_BOLA)} BOLA: object-level auth off    VULNERABLE_BOLA=false            to enforce`
+  );
+  console.log(
+    `  ${mark(VULNERABLE_BUSINESS_FLOW)} Sensitive flow unthrottled     VULNERABLE_BUSINESS_FLOW=false   to throttle`
   );
   console.log(
     `  ${mark(VULNERABLE_MASS_ASSIGNMENT)} Mass assignment (PATCH /users/:id) VULNERABLE_MASS_ASSIGNMENT=false to strip`

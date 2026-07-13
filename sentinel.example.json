@@ -51,6 +51,11 @@
       "body"
     ]
   },
+  "businessFlow": {
+    "sensitivePaths": [
+      "POST /api/v2/coupons/redeem"
+    ]
+  },
   "active": {
     "maxRequestsPerSuite": 40,
     "timeoutMs": 8000

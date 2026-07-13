@@ -90,6 +90,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 | `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
 | `VULNERABLE_BOLA` | `true` | `GET /api/v2/users/:id` returns any user's record regardless of the caller's identity | `false` |
+| `VULNERABLE_BUSINESS_FLOW` | `true` | `POST /api/v2/coupons/redeem` never throttles | `false` |
 | `VULNERABLE_MASS_ASSIGNMENT` | `true` | `PATCH /api/v2/users/:id` merges undocumented body fields (`role`, `isAdmin`, `owner`, ...) into the record | `false` |
 | `VULNERABLE_DATA_EXPOSURE` | `true` | `GET /api/v2/users/:id` includes `apiKey` in the response | `false` |
 
@@ -158,6 +159,23 @@ config is `AUTH_REQUIRED=true` with a token for the record's own identity
 pattern as the BOLA fixture. The Sentinel check that probes this
 (`auth.mass_assignment_accepted`) is Epic 5 story 5.9.
 
+### Sensitive business flow fixture (`VULNERABLE_BUSINESS_FLOW`)
+
+`POST /api/v2/coupons/redeem` simulates a sensitive business flow (coupon
+redemption) — the fixture for Sentinel's opt-in `businessFlow.sensitivePaths`
+config and the ratelimit suite's third phase (`ratelimit.sensitive_flow_unthrottled`,
+Epic 5 story 5.11). Unlike the rest of Anemone — which has no rate-limit
+toggle at all by design, since general HTTP-layer rate limiting isn't meant
+to be fixable per endpoint here — this route implements a real minimal
+throttle so the "fixed" state is actually demonstrable: default
+(`VULNERABLE_BUSINESS_FLOW=true`) never throttles; `=false` returns `429` with
+`Retry-After` after 3 requests.
+
+`sentinel.example.json` declares `"POST /api/v2/coupons/redeem"` under
+`businessFlow.sensitivePaths` so a default scan exercises this check
+end-to-end. No auth required — the flow itself is the sensitive surface, not
+who's calling it.
+
 ---
 
 ## Vulnerability inventory
@@ -190,6 +208,7 @@ which env var controls it.
 | `auth.bola_object_access` | `/api/v2/users/:id` | `AUTH_REQUIRED=true` + `VULNERABLE_BOLA=true` + two identities configured |
 | `inventory.excessive_data_exposure` | `/api/v2/users/:id` | `VULNERABLE_DATA_EXPOSURE=false` |
 | `auth.mass_assignment_accepted`² | `PATCH /api/v2/users/:id` | `AUTH_REQUIRED=true` + `VULNERABLE_MASS_ASSIGNMENT=true` to trigger, only when Sentinel runs with `auth.massAssignmentProbe` |
+| `ratelimit.sensitive_flow_unthrottled` | `POST /api/v2/coupons/redeem`, only when Sentinel declares it under `businessFlow.sensitivePaths` (default `sentinel.example.json` does) | `VULNERABLE_BUSINESS_FLOW=false` |
 
 ² Epic 5 story 5.9 (not yet implemented at the time this fixture landed) — no
 `FINDINGS.md` entry until that check exists.
@@ -208,6 +227,7 @@ which env var controls it.
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
 | `GET` | `/api/v2/fetch?url=` | No | SSRF surface — accepts a URL query param (reflects it; no real fetch) |
 | `POST` | `/api/v2/webhooks` | No | SSRF surface — accepts a URL in the JSON body (reflects it; no real fetch) |
+| `POST` | `/api/v2/coupons/redeem` | No | Sensitive business flow — unthrottled by default, `VULNERABLE_BUSINESS_FLOW=false` throttles after 3 requests |
 | `GET` | `/api/v1/` | No | Legacy (conditional) |
 | `GET` | `/api/v1/users` | No | Legacy (conditional) |
 | `GET` | `/debug` | No | Full live config — always on |
