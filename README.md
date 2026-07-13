@@ -90,6 +90,7 @@ All flags default to the **vulnerable** state. Set a flag as shown in the "Fix" 
 | `VULNERABLE_TEMPLATE` | `true` | `{{expr}}` evaluated in query params | `false` |
 | `VULNERABLE_SSRF` | `true` | `/api/v2/fetch?url=` (GET query) and `POST /api/v2/webhooks` (JSON body) accept any URL without validation | `false` |
 | `VULNERABLE_BOLA` | `true` | `GET /api/v2/users/:id` returns any user's record regardless of the caller's identity | `false` |
+| `VULNERABLE_BUSINESS_FLOW` | `true` | `POST /api/v2/coupons/redeem` never throttles | `false` |
 
 ¹ Setting `JWT_ALG=HS256` clears `auth.jwt_alg_none` but the signature is still a
 hardcoded stub, so the token trips `auth.jwt_weak_signature` instead. Anemone is a
@@ -127,6 +128,23 @@ this (a cross-identity BOLA probe) is Epic 5 story 5.5, so there is no
 `FINDINGS.md` ID for it yet; this endpoint is the target fixture that lands
 first.
 
+### Sensitive business flow fixture (`VULNERABLE_BUSINESS_FLOW`)
+
+`POST /api/v2/coupons/redeem` simulates a sensitive business flow (coupon
+redemption) — the fixture for Sentinel's opt-in `businessFlow.sensitivePaths`
+config and the ratelimit suite's third phase (`ratelimit.sensitive_flow_unthrottled`,
+Epic 5 story 5.11). Unlike the rest of Anemone — which has no rate-limit
+toggle at all by design, since general HTTP-layer rate limiting isn't meant
+to be fixable per endpoint here — this route implements a real minimal
+throttle so the "fixed" state is actually demonstrable: default
+(`VULNERABLE_BUSINESS_FLOW=true`) never throttles; `=false` returns `429` with
+`Retry-After` after 3 requests.
+
+`sentinel.example.json` declares `"POST /api/v2/coupons/redeem"` under
+`businessFlow.sensitivePaths` so a default scan exercises this check
+end-to-end. No auth required — the flow itself is the sensitive surface, not
+who's calling it.
+
 ---
 
 ## Vulnerability inventory
@@ -156,6 +174,7 @@ which env var controls it.
 | `injection.sql_error_disclosure` | `/api/v2/search` | `VULNERABLE_SQL=false` |
 | `injection.possible_template_injection` | `/api/v2/greet` | `VULNERABLE_TEMPLATE=false` |
 | `inventory.ssrf_surface` | `/api/v2/fetch?url=` (GET query, always probed); `POST /api/v2/webhooks` (JSON body, only when Sentinel runs with `inventory.ssrfActiveProbe`) | `VULNERABLE_SSRF=false` |
+| `ratelimit.sensitive_flow_unthrottled` | `POST /api/v2/coupons/redeem`, only when Sentinel declares it under `businessFlow.sensitivePaths` (default `sentinel.example.json` does) | `VULNERABLE_BUSINESS_FLOW=false` |
 
 ## Endpoints
 
@@ -170,6 +189,7 @@ which env var controls it.
 | `GET` | `/api/v2/greet?name=` | No | Template injection probe |
 | `GET` | `/api/v2/fetch?url=` | No | SSRF surface — accepts a URL query param (reflects it; no real fetch) |
 | `POST` | `/api/v2/webhooks` | No | SSRF surface — accepts a URL in the JSON body (reflects it; no real fetch) |
+| `POST` | `/api/v2/coupons/redeem` | No | Sensitive business flow — unthrottled by default, `VULNERABLE_BUSINESS_FLOW=false` throttles after 3 requests |
 | `GET` | `/api/v1/` | No | Legacy (conditional) |
 | `GET` | `/api/v1/users` | No | Legacy (conditional) |
 | `GET` | `/debug` | No | Full live config — always on |
