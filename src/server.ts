@@ -23,6 +23,7 @@ const VULNERABLE_SQL = process.env.VULNERABLE_SQL !== 'false'; // default: on
 const VULNERABLE_TEMPLATE = process.env.VULNERABLE_TEMPLATE !== 'false'; // default: on
 const VULNERABLE_SSRF = process.env.VULNERABLE_SSRF !== 'false'; // default: on
 const VULNERABLE_BOLA = process.env.VULNERABLE_BOLA !== 'false'; // default: on
+const VULNERABLE_DATA_EXPOSURE = process.env.VULNERABLE_DATA_EXPOSURE !== 'false'; // default: on
 
 // ── Security headers ───────────────────────────────────────────────────────────
 // Disabled by default — triggers headers.missing_hsts, missing_xcto, missing_referrer_policy.
@@ -225,6 +226,15 @@ app.get('/api/v2/users', requireAuth, (_req: Request, res: Response) => {
 // requireAuth gates it (respects AUTH_REQUIRED, like the list route), so the
 // meaningful BOLA config is AUTH_REQUIRED=true + VULNERABLE_BOLA=true.
 // This is the target fixture for Sentinel's BOLA probe (Epic 5 story 5.5).
+//
+// ── Excessive data exposure ─────────────────────────────────────────────────────
+// Independent of the BOLA check above: once a caller passes the ownership gate
+// (or VULNERABLE_BOLA leaks the record anyway), the response still includes
+// `apiKey` — a credential that should never be re-served on a read, even to its
+// owner. Default (VULNERABLE_DATA_EXPOSURE=true): apiKey included. =false: apiKey
+// stripped from the response entirely. `email` stays present in both modes — it's
+// expected profile data, not the excessive-exposure case. This is the fixture for
+// Sentinel's inventory.excessive_data_exposure check (Epic 5 story 5.7).
 app.get('/api/v2/users/:id', requireAuth, (req: Request, res: Response) => {
   const record = USERS[Number(req.params.id)];
   if (!record) {
@@ -237,6 +247,11 @@ app.get('/api/v2/users/:id', requireAuth, (req: Request, res: Response) => {
     : null;
   if (!VULNERABLE_BOLA && record.owner !== callerSub) {
     res.status(403).json({ error: 'forbidden', reason: 'not your resource' });
+    return;
+  }
+  if (!VULNERABLE_DATA_EXPOSURE) {
+    const { apiKey: _apiKey, ...safe } = record;
+    res.json(safe);
     return;
   }
   res.json(record);
@@ -355,7 +370,8 @@ app.get('/debug', (_req: Request, res: Response) => {
       VULNERABLE_SQL,
       VULNERABLE_TEMPLATE,
       VULNERABLE_SSRF,
-      VULNERABLE_BOLA
+      VULNERABLE_BOLA,
+      VULNERABLE_DATA_EXPOSURE
     }
   });
 });
@@ -378,7 +394,26 @@ if (EXPOSE_SWAGGER) {
           get: {
             summary: 'Get a user by id',
             parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-            responses: { 200: { description: 'OK' }, 404: { description: 'Not found' } }
+            responses: {
+              200: {
+                description: 'OK',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'integer' },
+                        name: { type: 'string' },
+                        owner: { type: 'string' },
+                        email: { type: 'string' },
+                        apiKey: { type: 'string' }
+                      }
+                    }
+                  }
+                }
+              },
+              404: { description: 'Not found' }
+            }
           }
         },
         '/auth': {
@@ -514,6 +549,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `  ${mark(VULNERABLE_BOLA)} BOLA: object-level auth off    VULNERABLE_BOLA=false            to enforce`
+  );
+  console.log(
+    `  ${mark(VULNERABLE_DATA_EXPOSURE)} Excessive data exposure (apiKey) VULNERABLE_DATA_EXPOSURE=false   to strip`
   );
   console.log('');
   console.log(`Run against this target:`);
